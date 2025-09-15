@@ -136,17 +136,10 @@
                         { id: "b6", name: "Cerveja Budweiser Long Neck", price: 6.80, image: "https://placehold.co/150x150/607D8B/000000?text=Budweiser", category: "cervejas" },
                         { id: "b7", name: "Cerveja Amstel Lata", price: 5.50, image: "https://placehold.co/150x150/FFB300/000000?text=Amstel", category: "cervejas" }
                     ],
-                    "bebidas_comuns": [
-                         { id: "bc1", name: "Água Mineral 500ml", price: 3.00, image: "https://placehold.co/150x150/AAD1FF/000000?text=Agua+Mineral", category: "bebidas_comuns" },
-                         { id: "bc2", name: "Coca-Cola Lata 350ml", price: 5.00, image: "https://placehold.co/150x150/F44336/000000?text=Coca-Cola", category: "bebidas_comuns" },
-                         { id: "bc3", name: "Guaraná Antarctica Lata 350ml", price: 4.50, image: "https://placehold.co/150x150/9C27B0/000000?text=Guarana+Antarctica", category: "bebidas_comuns" },
-                         { id: "bc4", name: "Suco de Uva Integral", price: 8.50, image: "https://placehold.co/150x150/673AB7/FFFFFF?text=Suco+Uva", category: "bebidas_comuns" },
-                         { id: "bc5", name: "Gatorade Morango", price: 7.00, image: "https://placehold.co/150x150/F44336/FFFFFF?text=Gatorade+Morango", category: "bebidas_comuns" }
-                    ],
                     "bebidas_alcolicas": [
                         { id: "ba1", name: "Whisky Jack Daniel's 1L", price: 120.00, image: "https://placehold.co/150x150/3E2723/FFFFFF?text=Jack+Daniels", category: "bebidas_alcolicas" },
                         { id: "ba2", name: "Vodka Smirnoff 998ml", price: 45.00, image: "https://placehold.co/150x150/7986CB/000000?text=Smirnoff", category: "bebidas_alcolicas" },
-                        { id: "ba3", name: "Gin Tanqueray London Dry 750ml", price: 95.0.co/150x150/2E7D32/FFFFFF?text=Tanqueray", category: "bebidas_alcolicas" },
+                        { id: "ba3", name: "Gin Tanqueray London Dry 750ml", price: 95.00, image: "https://placehold.co/150x150/2E7D32/FFFFFF?text=Tanqueray", category: "bebidas_alcolicas" },
                         { id: "ba4", name: "Cachaça Ypióca Ouro 965ml", price: 30.00, image: "https://placehold.co/150x150/FFEB3B/000000?text=Ypioca", category: "bebidas_alcolicas" },
                         { id: "ba5", name: "Catuaba Selvagem 1L", price: 18.00, image: "https://placehold.co/150x150/8D6E63/FFFFFF?text=Catuaba+Selvagem", category: "bebidas_alcolicas" }
                     ],
@@ -209,7 +202,7 @@
                 let buttonText = 'Harmonização ✨';
                 if (product.category === 'essencias') {
                     buttonText = 'Sugerir Mix ✨';
-                } else if (product.category === 'carvao') {
+                } else if (product.category === 'carvao' || product.category === 'headshop') {
                     buttonText = 'Dicas de Uso ✨';
                 }
                 
@@ -325,6 +318,9 @@
             } else if (category === 'carvao') {
                  userQuery = `Forneça 3 dicas de uso para o seguinte tipo de produto de narguilé: ${productName}. As dicas devem focar em como acendê-lo e gerenciar o calor para uma sessão perfeita. Apresente a resposta em uma lista numerada.`;
                  systemPrompt = "Você é um especialista em narguilé, com uma linguagem amigável e acessível.";
+            } else if (category === 'headshop') {
+                 userQuery = `Forneça 3 dicas de uso e limpeza para o seguinte item de headshop: ${productName}. Apresente a resposta em uma lista numerada.`;
+                 systemPrompt = "Você é um especialista em produtos de headshop, com uma linguagem amigável e acessível.";
             }
             
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
@@ -793,7 +789,7 @@
     <footer class="bg-gray-900 text-gray-400 p-6 lg:p-10 text-center mt-10 rounded-t-2xl shadow-inner">
         <div class="container mx-auto">
             <p>&copy; 2024 Vidal Design Solutions. Todos os direitos reservados.</p>
-            <p class="text-sm mt-1">Desenvendo sistemas que facilitam sua vida.</p>
+            <p class="text-sm mt-1">Desenvolvendo sistemas que facilitam sua vida.</p>
         </div>
     </footer>
 </body>
