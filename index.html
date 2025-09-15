@@ -17,6 +17,7 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const geminiApiKey = ""; // A chave da API Gemini será injetada no ambiente.
 
         // Inicializa o Firebase e o Firestore
         const app = initializeApp(firebaseConfig);
@@ -145,7 +146,7 @@
                     "bebidas_alcolicas": [
                         { id: "ba1", name: "Whisky Jack Daniel's 1L", price: 120.00, image: "https://placehold.co/150x150/3E2723/FFFFFF?text=Jack+Daniels", category: "bebidas_alcolicas" },
                         { id: "ba2", name: "Vodka Smirnoff 998ml", price: 45.00, image: "https://placehold.co/150x150/7986CB/000000?text=Smirnoff", category: "bebidas_alcolicas" },
-                        { id: "ba3", name: "Gin Tanqueray London Dry 750ml", price: 95.00, image: "https://placehold.co/150x150/2E7D32/FFFFFF?text=Tanqueray", category: "bebidas_alcolicas" },
+                        { id: "ba3", name: "Gin Tanqueray London Dry 750ml", price: 95.0.co/150x150/2E7D32/FFFFFF?text=Tanqueray", category: "bebidas_alcolicas" },
                         { id: "ba4", name: "Cachaça Ypióca Ouro 965ml", price: 30.00, image: "https://placehold.co/150x150/FFEB3B/000000?text=Ypioca", category: "bebidas_alcolicas" },
                         { id: "ba5", name: "Catuaba Selvagem 1L", price: 18.00, image: "https://placehold.co/150x150/8D6E63/FFFFFF?text=Catuaba+Selvagem", category: "bebidas_alcolicas" }
                     ],
@@ -205,15 +206,27 @@
             }
             
             categoryProducts.forEach(product => {
+                let buttonText = 'Harmonização ✨';
+                if (product.category === 'essencias') {
+                    buttonText = 'Sugerir Mix ✨';
+                } else if (product.category === 'carvao') {
+                    buttonText = 'Dicas de Uso ✨';
+                }
+                
                 const productCard = `
                     <div class="product-card bg-white p-4 rounded-xl shadow-md flex flex-col items-center text-center">
                         <img src="${product.image}" alt="${product.name}" class="rounded-lg mb-4 w-32 h-32 object-contain">
                         <h3 class="font-semibold text-gray-800">${product.name}</h3>
                         <p class="text-sm text-gray-600 my-2">${formatPrice(product.price)}</p>
-                        <div class="flex items-center space-x-2 mt-auto">
-                            <input type="number" value="1" min="1" class="quantity-input w-16 text-center border rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-purple-500">
-                            <button data-id="${product.id}" class="add-to-cart-btn px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none">
-                                Adicionar
+                        <div class="flex flex-col items-center space-y-2 mt-auto">
+                            <div class="flex items-center space-x-2 w-full">
+                                <input type="number" value="1" min="1" class="quantity-input w-16 text-center border rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                                <button data-id="${product.id}" class="add-to-cart-btn px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none flex-1">
+                                    Adicionar
+                                </button>
+                            </div>
+                             <button data-id="${product.id}" data-name="${product.name}" data-category="${product.category}" class="gemini-btn w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none">
+                                ${buttonText}
                             </button>
                         </div>
                     </div>
@@ -297,8 +310,62 @@
             });
         };
 
+        const generateGeminiSuggestions = async (productName, category) => {
+            const modal = document.getElementById('gemini-modal');
+            const modalContent = document.getElementById('gemini-content');
+            modalContent.innerHTML = `<p class="text-gray-500 text-center">Gerando sugestões para ${productName}...</p>`;
+            modal.style.display = 'block';
+
+            let userQuery = `Forneça 3 sugestões de harmonização de comidas e/ou receitas de drinks para o seguinte produto: ${productName}. Apresente a resposta em uma lista numerada.`;
+            let systemPrompt = "Você é um sommelier e mixologista experiente, com uma linguagem amigável e acessível.";
+
+            if (category === 'essencias') {
+                userQuery = `Forneça 3 sugestões de mix de essências que combinem com o sabor de ${productName}. Apresente a resposta em uma lista numerada.`;
+                systemPrompt = "Você é um especialista em narguilé, com uma linguagem amigável e acessível.";
+            } else if (category === 'carvao') {
+                 userQuery = `Forneça 3 dicas de uso para o seguinte tipo de produto de narguilé: ${productName}. As dicas devem focar em como acendê-lo e gerenciar o calor para uma sessão perfeita. Apresente a resposta em uma lista numerada.`;
+                 systemPrompt = "Você é um especialista em narguilé, com uma linguagem amigável e acessível.";
+            }
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiApiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            let response;
+            try {
+                response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Erro na API: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (text) {
+                    const formattedText = text.replace(/\n/g, '<br>');
+                    modalContent.innerHTML = `
+                        <h2 class="text-xl font-bold mb-4">Sugestões para ${productName}</h2>
+                        <p class="text-gray-700">${formattedText}</p>
+                    `;
+                } else {
+                    modalContent.innerHTML = `<p class="text-red-500 text-center">Não foi possível gerar sugestões. Tente novamente.</p>`;
+                }
+            } catch (error) {
+                console.error("Erro na chamada da API Gemini:", error);
+                modalContent.innerHTML = `<p class="text-red-500 text-center">Ocorreu um erro: ${error.message}</p>`;
+            }
+        };
+
         window.onload = () => {
-             const productList = document.getElementById('product-list');
+            const productList = document.getElementById('product-list');
             const cartCounter = document.getElementById('cart-counter');
             const cartButton = document.getElementById('cart-button');
             const checkoutSection = document.getElementById('checkout-section');
@@ -310,10 +377,10 @@
             const salesPanelButton = document.getElementById('sales-panel-button');
             const salesPanelSection = document.getElementById('sales-panel-section');
             const ordersList = document.getElementById('orders-list');
+            const geminiModal = document.getElementById('gemini-modal');
             
             // Inicializa a UI
             renderProducts('essencias');
-            renderOrders();
 
             productList.addEventListener('click', (e) => {
                 if (e.target.classList.contains('add-to-cart-btn')) {
@@ -332,6 +399,10 @@
                         renderCart();
                         quantityInput.value = 1;
                     }
+                } else if (e.target.classList.contains('gemini-btn')) {
+                    const productName = e.target.dataset.name;
+                    const productCategory = e.target.dataset.category;
+                    generateGeminiSuggestions(productName, productCategory);
                 }
             });
 
@@ -454,6 +525,10 @@
                     renderProducts(category);
                 });
             });
+            
+            geminiModal.querySelector('.close-btn').addEventListener('click', () => {
+                geminiModal.style.display = 'none';
+            });
         };
     </script>
     <style>
@@ -497,21 +572,19 @@
             width: 80%;
             max-width: 500px;
             box-shadow: 5px 5px 20px rgba(0, 0, 0, 0.2);
+            position: relative;
         }
-        .whatsapp-btn-float {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 999;
-            background-color: #25D366;
-            color: white;
-            padding: 1rem;
-            border-radius: 9999px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: transform 0.2s;
+        .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #aaa;
         }
-        .whatsapp-btn-float:hover {
-            transform: scale(1.1);
+        .close-btn:hover {
+            color: #000;
         }
     </style>
 </head>
@@ -522,6 +595,16 @@
             <h2 class="text-2xl font-bold text-gray-800 mb-4">Pedido Enviado com Sucesso!</h2>
             <p class="text-gray-600 mb-6">O seu pedido foi enviado para o WhatsApp da adega. Agradecemos a preferência!</p>
             <button onclick="document.getElementById('modal-success').style.display='none'" class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none">Fechar</button>
+        </div>
+    </div>
+
+    <!-- Modal para o Gemini -->
+    <div id="gemini-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <div id="gemini-content">
+                <!-- Conteúdo gerado pelo Gemini será injetado aqui -->
+            </div>
         </div>
     </div>
     
@@ -710,7 +793,7 @@
     <footer class="bg-gray-900 text-gray-400 p-6 lg:p-10 text-center mt-10 rounded-t-2xl shadow-inner">
         <div class="container mx-auto">
             <p>&copy; 2024 Vidal Design Solutions. Todos os direitos reservados.</p>
-            <p class="text-sm mt-1">Desenvolvido com paixão para a sua adega.</p>
+            <p class="text-sm mt-1">Desenvendo sistemas que facilitam sua vida.</p>
         </div>
     </footer>
 </body>
