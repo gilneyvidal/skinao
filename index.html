@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Adega - Catálogo de Produtos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        // Importa as bibliotecas do Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, addDoc, serverTimestamp, setLogLevel, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        setLogLevel('debug');
+
+        // Variáveis globais fornecidas pelo ambiente
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Inicializa o Firebase e o Firestore
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        let userId = null;
+
+        // Estado do carrinho e dos produtos
+        const cart = {};
+        const products = {};
+        const whatsappNumber = "5511968649673"; 
+
+        // Função para formatar o preço
+        const formatPrice = (price) => `R$ ${price.toFixed(2).replace('.', ',')}`;
+
+        // Lógica de Autenticação e Sincronização de Dados
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                console.log("Usuário autenticado:", userId);
+                
+                // Inicializa a sincronização de dados do Firestore
+                setupFirestoreListeners();
+            } else {
+                console.log("Nenhum usuário logado. Tentando autenticar...");
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                        console.log("Autenticação com token customizado bem-sucedida.");
+                    } else {
+                        await signInAnonymously(auth);
+                        console.log("Autenticação anônima bem-sucedida.");
+                    }
+                } catch (error) {
+                    console.error("Erro na autenticação:", error);
+                }
+            }
+        });
+
+        const setupFirestoreListeners = async () => {
+            // Sincroniza a lista de produtos
+            const productsPath = `/artifacts/${appId}/users/${userId}/products`;
+            onSnapshot(collection(db, productsPath), (snapshot) => {
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    products[data.id] = data;
+                });
+                console.log("Produtos carregados do Firestore.");
+                renderProducts('essencias');
+            });
+            
+            // Sincroniza a lista de pedidos em tempo real
+            const ordersPath = `/artifacts/${appId}/users/${userId}/orders`;
+            onSnapshot(collection(db, ordersPath), (snapshot) => {
+                const ordersList = document.getElementById('orders-list');
+                ordersList.innerHTML = '';
+                if (snapshot.empty) {
+                    ordersList.innerHTML = '<p class="text-gray-500 text-center">Nenhum pedido encontrado.</p>';
+                } else {
+                    snapshot.forEach(doc => {
+                        const order = doc.data();
+                        const orderDate = order.timestamp ? new Date(order.timestamp.toDate()) : new Date();
+                        const itemsHtml = order.items.map(item => `
+                            <li>- ${item.name} (${item.quantity} un.) - ${formatPrice(item.price * item.quantity)}</li>
+                        `).join('');
+
+                        const orderElement = `
+                            <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                                <p class="text-sm text-gray-400">Pedido #${doc.id.substring(0, 8)}</p>
+                                <p class="font-bold text-gray-800">Cliente: ${order.name}</p>
+                                <p class="text-sm text-gray-600">Telefone: ${order.phone}</p>
+                                <p class="text-sm text-gray-600 mb-2">Data: ${orderDate.toLocaleString()}</p>
+                                <ul class="list-disc pl-5 text-sm text-gray-700">
+                                    ${itemsHtml}
+                                </ul>
+                                <p class="font-bold mt-2">Total: ${formatPrice(order.total)}</p>
+                            </div>
+                        `;
+                        ordersList.innerHTML += orderElement;
+                    });
+                }
+                console.log("Pedidos sincronizados em tempo real.");
+            });
+
+            // Adiciona os produtos iniciais se a coleção estiver vazia
+            const productsPathRef = collection(db, productsPath);
+            const snapshot = await getDocs(productsPathRef);
+            if (snapshot.empty) {
+                const initialProducts = {
+                    "essencias": [
+                        { id: "e1", name: "Essência Zomo Strong Peach", price: 12.00, image: "https://i.ibb.co/L5rK5Qp/Zomo-Logo.jpg", category: "essencias" },
+                        { id: "e2", name: "Essência Zomo Watermelon Mint", price: 13.50, image: "https://i.ibb.co/L5rK5Qp/Zomo-Logo.jpg", category: "essencias" },
+                        { id: "e3", name: "Essência Ziggy Fresh Limon", price: 15.00, image: "https://i.ibb.co/N6Wb86q/Ziggy-Logo.jpg", category: "essencias" },
+                        { id: "e4", name: "Essência Ziggy Yellow Starburst", price: 15.00, image: "https://i.ibb.co/N6Wb86q/Ziggy-Logo.jpg", category: "essencias" },
+                        { id: "e5", name: "Essência Adalya Love 66", price: 13.00, image: "https://i.ibb.co/2W8V5k7/Adalya-Logo.jpg", category: "essencias" },
+                        { id: "e6", name: "Essência Adalya Hawaii", price: 13.00, image: "https://i.ibb.co/2W8V5k7/Adalya-Logo.jpg", category: "essencias" },
+                        { id: "e7", name: "Essência Nay Cherry Blend", price: 14.00, image: "https://i.ibb.co/4p3R7Sj/Nay-Logo.jpg", category: "essencias" },
+                        { id: "e8", name: "Essência Nay Passion Blend", price: 14.00, image: "https://i.ibb.co/4p3R7Sj/Nay-Logo.jpg", category: "essencias" },
+                        { id: "e9", name: "Essência Onix Drops", price: 11.00, image: "https://i.ibb.co/qN1YQ5C/Onix-Logo.jpg", category: "essencias" },
+                        { id: "e10", name: "Essência Onix Pear", price: 11.00, image: "https://i.ibb.co/qN1YQ5C/Onix-Logo.jpg", category: "essencias" }
+                    ],
+                    "carvao": [
+                        { id: "c1", name: "Carvão Zomo 1kg", price: 25.00, image: "https://i.ibb.co/zXn2k6x/Zomo-Carvao.jpg", category: "carvao" },
+                        { id: "c2", name: "Carvão Fumax 500gr", price: 15.00, image: "https://i.ibb.co/R2tW2wB/Fumax-Logo.png", category: "carvao" },
+                        { id: "c3", name: "Carvão Art Coco 1kg", price: 28.00, image: "https://i.ibb.co/v4bS0zP/Art-Coco.jpg", category: "carvao" },
+                        { id: "c4", name: "Carvão Coco Supreme 500gr", price: 16.50, image: "https://i.ibb.co/S7q85x3/Coco-Supreme-Logo.jpg", category: "carvao" },
+                        { id: "c5", name: "Carvão Zomo 250gr", price: 9.00, image: "https://i.ibb.co/zXn2k6x/Zomo-Carvao.jpg", category: "carvao" }
+                    ],
+                    "cervejas": [
+                        { id: "b1", name: "Cerveja Heineken Lata", price: 6.50, image: "https://i.ibb.co/6P8jK2d/Heineken.jpg", category: "cervejas" },
+                        { id: "b2", name: "Cerveja Corona Long Neck", price: 9.00, image: "https://i.ibb.co/v3BqH9p/Corona.jpg", category: "cervejas" },
+                        { id: "b3", name: "Cerveja Skol Pilsen Lata", price: 4.50, image: "https://i.ibb.co/X7D74R5/Skol.jpg", category: "cervejas" },
+                        { id: "b4", name: "Cerveja Brahma Duplo Malte Lata", price: 5.00, image: "https://i.ibb.co/Yj93YhV/Brahma.jpg", category: "cervejas" },
+                        { id: "b5", name: "Cerveja Stella Artois Long Neck", price: 7.00, image: "https://i.ibb.co/x7R9Y9k/Stella-Artois.jpg", category: "cervejas" },
+                        { id: "b6", name: "Cerveja Budweiser Long Neck", price: 6.80, image: "https://i.ibb.co/d7z0wP1/Budweiser.jpg", category: "cervejas" },
+                        { id: "b7", name: "Cerveja Amstel Lata", price: 5.50, image: "https://i.ibb.co/9rW8Z6X/Amstel.jpg", category: "cervejas" }
+                    ],
+                    "bebidas_comuns": [
+                         { id: "bc1", name: "Água Mineral 500ml", price: 3.00, image: "https://i.ibb.co/y4rT3g2/agua-min.jpg", category: "bebidas_comuns" },
+                         { id: "bc2", name: "Coca-Cola Lata 350ml", price: 5.00, image: "https://i.ibb.co/tCg3r7Z/coca-cola.jpg", category: "bebidas_comuns" },
+                         { id: "bc3", name: "Guaraná Antarctica Lata 350ml", price: 4.50, image: "https://i.ibb.co/xJ5g9Vp/guarana.jpg", category: "bebidas_comuns" },
+                         { id: "bc4", name: "Suco de Uva Integral", price: 8.50, image: "https://i.ibb.co/VMyh5qF/suco-uva.jpg", category: "bebidas_comuns" },
+                         { id: "bc5", name: "Gatorade Morango", price: 7.00, image: "https://i.ibb.co/9cd2s4M/gatorade.jpg", category: "bebidas_comuns" }
+                    ],
+                    "bebidas_alcolicas": [
+                        { id: "ba1", name: "Whisky Jack Daniel's 1L", price: 120.00, image: "https://i.ibb.co/D8G4H8F/jack-daniels.jpg", category: "bebidas_alcolicas" },
+                        { id: "ba2", name: "Vodka Smirnoff 998ml", price: 45.00, image: "https://i.ibb.co/k5J0P2T/smirnoff.jpg", category: "bebidas_alcolicas" },
+                        { id: "ba3", name: "Gin Tanqueray London Dry 750ml", price: 95.00, image: "https://i.ibb.co/k2c0mFf/tanqueray.jpg", category: "bebidas_alcolicas" },
+                        { id: "ba4", name: "Cachaça Ypióca Ouro 965ml", price: 30.00, image: "https://i.ibb.co/j4G1H5r/ypioca.jpg", category: "bebidas_alcolicas" },
+                        { id: "ba5", name: "Catuaba Selvagem 1L", price: 18.00, image: "https://i.ibb.co/f4K0W8D/catuaba.jpg", category: "bebidas_alcolicas" }
+                    ],
+                    "drinks": [
+                        { id: "d1", name: "Red Bull Energy Drink", price: 10.00, image: "https://i.ibb.co/q5k2D9f/red-bull.jpg", category: "drinks" },
+                        { id: "d2", name: "Absolut Ice 275ml", price: 16.00, image: "https://i.ibb.co/N7Z7f9r/absolut-ice.jpg", category: "drinks" },
+                        { id: "d3", name: "Coquetel alcoólico Corote Sabores", price: 5.00, image: "https://i.ibb.co/zXn2k6x/corote.jpg", category: "drinks" }
+                    ],
+                    "headshop": [
+                        { id: "h1", name: "Seda Zomo C/ Piteira", price: 4.50, image: "https://i.ibb.co/m0fH4L3/seda-zomo.jpg", category: "headshop" },
+                        { id: "h2", name: "Dichavador de Metal", price: 25.00, image: "https://i.ibb.co/3k5fH8D/dichavador.jpg", category: "headshop" },
+                        { id: "h3", name: "Filtro de Carvão Ativado", price: 18.00, image: "https://i.ibb.co/3k5fH8D/dichavador.jpg", category: "headshop" },
+                        { id: "h4", name: "Isqueiro Clipper", price: 8.00, image: "https://i.ibb.co/S6z7t8y/clipper.jpg", category: "headshop" }
+                    ],
+                    "bomboniere": [
+                        { id: "bo1", name: "Chocolate Lacta Ao Leite", price: 6.00, image: "https://i.ibb.co/6y4tW6B/lacta.jpg", category: "bomboniere" },
+                        { id: "bo2", name: "Paçoca Rolha Paçoquita", price: 0.80, image: "https://i.ibb.co/2nQ0X9b/pacoquita.jpg", category: "bomboniere" },
+                        { id: "bo3", name: "Bala Fini Tube Azedinho", price: 5.50, image: "https://i.ibb.co/79f5s4C/fini.jpg", category: "bomboniere" },
+                        { id: "bo4", name: "Goma de Mascar Trident", price: 3.50, image: "https://i.ibb.co/zXn2k6x/trident.jpg", category: "bomboniere" }
+                    ],
+                    "mercadinho": [
+                        { id: "m1", name: "Salgadinho Doritos", price: 7.00, image: "https://i.ibb.co/d4s8D3z/doritos.jpg", category: "mercadinho" },
+                        { id: "m2", name: "Salgadinho Elma Chips", price: 6.50, image: "https://i.ibb.co/S2n7X5C/elma-chips.jpg", category: "mercadinho" },
+                        { id: "m3", name: "Pão de Forma Tradicional", price: 8.00, image: "https://i.ibb.co/G3p2Z9y/pao-forma.jpg", category: "mercadinho" },
+                        { id: "m4", name: "Biscoito Oreo Recheado", price: 4.00, image: "https://i.ibb.co/p3y8F6c/oreo.jpg", category: "mercadinho" }
+                    ],
+                    "variados": [
+                        { id: "v1", name: "Gelo em Cubo 5kg", price: 12.00, image: "https://i.ibb.co/1k6S9wX/gelo.jpg", category: "variados" },
+                        { id: "v2", name: "Carvão para Churrasco", price: 15.00, image: "https://i.ibb.co/9t8F5L4/carvao-churrasco.jpg", category: "variados" },
+                        { id: "v3", name: "Pilha Alcalina AA", price: 8.00, image: "https://i.ibb.co/k6Y1b8p/pilha-duracell.jpg", category: "variados" },
+                        { id: "v4", name: "Saca-rolhas de Vinho", price: 10.00, image: "https://i.ibb.co/r2F4y1h/saca-rolhas.jpg", category: "variados" }
+                    ]
+                };
+                for (const category in initialProducts) {
+                    for (const product of initialProducts[category]) {
+                        await addDoc(collection(db, productsPath), product);
+                    }
+                }
+                console.log("Produtos iniciais adicionados ao Firestore.");
+            }
+        };
+
+        const renderProducts = (category) => {
+            const productList = document.getElementById('product-list');
+            const categoryTitle = document.getElementById('category-title');
+            productList.innerHTML = '';
+            const categoryElement = document.querySelector(`[data-category="${category}"]`);
+            if (categoryElement) {
+                categoryTitle.textContent = categoryElement.textContent;
+            }
+            
+            const categoryProducts = Object.values(products).filter(p => p.category === category) || [];
+            
+            if (categoryProducts.length === 0) {
+                productList.innerHTML = '<p class="text-gray-500 text-center col-span-full">Nenhum produto nesta categoria. Adicione mais!</p>';
+                return;
+            }
+            
+            categoryProducts.forEach(product => {
+                const productCard = `
+                    <div class="product-card bg-white p-4 rounded-xl shadow-md flex flex-col items-center text-center">
+                        <img src="${product.image}" alt="${product.name}" class="rounded-lg mb-4 w-32 h-32 object-contain">
+                        <h3 class="font-semibold text-gray-800">${product.name}</h3>
+                        <p class="text-sm text-gray-600 my-2">${formatPrice(product.price)}</p>
+                        <div class="flex items-center space-x-2 mt-auto">
+                            <input type="number" value="1" min="1" class="quantity-input w-16 text-center border rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                            <button data-id="${product.id}" class="add-to-cart-btn px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none">
+                                Adicionar
+                            </button>
+                        </div>
+                    </div>
+                `;
+                productList.innerHTML += productCard;
+            });
+        };
+
+        const renderCart = () => {
+            const cartItemsContainer = document.getElementById('cart-items');
+            const cartTotalSpan = document.getElementById('cart-total');
+            const cartCounter = document.getElementById('cart-counter');
+            cartItemsContainer.innerHTML = '';
+            let total = 0;
+            const cartItemIds = Object.keys(cart);
+            if (cartItemIds.length === 0) {
+                cartItemsContainer.innerHTML = '<p class="text-gray-500 text-center">Seu carrinho está vazio.</p>';
+                cartTotalSpan.textContent = formatPrice(0);
+                cartCounter.textContent = '0';
+                return;
+            }
+
+            cartItemIds.forEach(id => {
+                const item = cart[id];
+                const itemTotal = item.price * item.quantity;
+                total += itemTotal;
+                const cartItem = `
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div class="flex items-center space-x-4">
+                            <img src="${item.image}" alt="${item.name}" class="w-12 h-12 rounded-full object-contain">
+                            <div>
+                                <h4 class="font-semibold">${item.name}</h4>
+                                <p class="text-sm text-gray-600">${formatPrice(item.price)} x ${item.quantity}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-bold">${formatPrice(itemTotal)}</span>
+                            <button data-id="${item.id}" class="remove-from-cart-btn text-red-500 ml-4 hover:text-red-700 focus:outline-none">
+                                &times;
+                            </button>
+                        </div>
+                    </div>
+                `;
+                cartItemsContainer.innerHTML += cartItem;
+            });
+
+            cartTotalSpan.textContent = formatPrice(total);
+            cartCounter.textContent = Object.values(cart).reduce((sum, item) => sum + item.quantity, 0);
+        };
+        
+        const renderOrders = () => {
+            const ordersList = document.getElementById('orders-list');
+            ordersList.innerHTML = '';
+            const storedOrders = localStorage.getItem('adegeOrders');
+            let orders = storedOrders ? JSON.parse(storedOrders) : [];
+            
+            if (orders.length === 0) {
+                ordersList.innerHTML = '<p class="text-gray-500 text-center">Nenhum pedido encontrado.</p>';
+                return;
+            }
+            
+            orders.forEach((order, index) => {
+                const orderDate = new Date(order.timestamp);
+                const itemsHtml = order.items.map(item => `
+                    <li>- ${item.name} (${item.quantity} un.) - ${formatPrice(item.price * item.quantity)}</li>
+                `).join('');
+
+                const orderElement = `
+                    <div class="bg-gray-50 p-4 rounded-lg shadow-sm">
+                        <p class="text-sm text-gray-400">Pedido #${index + 1}</p>
+                        <p class="font-bold text-gray-800">Cliente: ${order.name}</p>
+                        <p class="text-sm text-gray-600">Telefone: ${order.phone}</p>
+                        <p class="text-sm text-gray-600 mb-2">Data: ${orderDate.toLocaleString()}</p>
+                        <ul class="list-disc pl-5 text-sm text-gray-700">
+                            ${itemsHtml}
+                        </ul>
+                        <p class="font-bold mt-2">Total: ${formatPrice(order.total)}</p>
+                    </div>
+                `;
+                ordersList.innerHTML += orderElement;
+            });
+        };
+
+        window.onload = () => {
+             const productList = document.getElementById('product-list');
+            const cartCounter = document.getElementById('cart-counter');
+            const cartButton = document.getElementById('cart-button');
+            const checkoutSection = document.getElementById('checkout-section');
+            const cartItemsContainer = document.getElementById('cart-items');
+            const cartTotalSpan = document.getElementById('cart-total');
+            const deliveryFields = document.getElementById('delivery-fields');
+            const orderForm = document.getElementById('order-form');
+            const categoryTitle = document.getElementById('category-title');
+            const salesPanelButton = document.getElementById('sales-panel-button');
+            const salesPanelSection = document.getElementById('sales-panel-section');
+            const ordersList = document.getElementById('orders-list');
+            
+            // Inicializa a UI
+            renderProducts('essencias');
+            renderOrders();
+
+            productList.addEventListener('click', (e) => {
+                if (e.target.classList.contains('add-to-cart-btn')) {
+                    const button = e.target;
+                    const id = button.dataset.id;
+                    const quantityInput = button.parentNode.querySelector('.quantity-input');
+                    const quantity = parseInt(quantityInput.value, 10);
+
+                    if (quantity > 0) {
+                        const product = products[id];
+                        if (cart[id]) {
+                            cart[id].quantity += quantity;
+                        } else {
+                            cart[id] = { ...product, quantity: quantity };
+                        }
+                        renderCart();
+                        quantityInput.value = 1;
+                    }
+                }
+            });
+
+            cartItemsContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-from-cart-btn')) {
+                    const id = e.target.dataset.id;
+                    delete cart[id];
+                    renderCart();
+                }
+            });
+
+            cartButton.addEventListener('click', () => {
+                productList.classList.toggle('hidden');
+                checkoutSection.classList.toggle('hidden');
+                salesPanelSection.classList.add('hidden');
+                renderCart();
+                cartButton.innerHTML = checkoutSection.classList.contains('hidden') ? 
+                    `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.102 1.743.856 1.743H19c.954 0 1.583-.923 1.258-1.743L17 13M9 17h6" /></svg>
+                    <span id="cart-counter" class="ml-2 text-sm font-semibold">${Object.values(cart).reduce((sum, item) => sum + item.quantity, 0)}</span>` :
+                    'Voltar ao Catálogo';
+            });
+            
+            salesPanelButton.addEventListener('click', () => {
+                productList.classList.toggle('hidden');
+                checkoutSection.classList.add('hidden');
+                salesPanelSection.classList.toggle('hidden');
+                renderOrders();
+            });
+
+            document.querySelectorAll('input[name="deliveryOption"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    if (e.target.value === 'delivery') {
+                        deliveryFields.style.display = 'block';
+                    } else {
+                        deliveryFields.style.display = 'none';
+                    }
+                });
+            });
+
+            orderForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                if (Object.keys(cart).length === 0) {
+                    const modal = document.getElementById('modal-success');
+                    const modalContent = modal.querySelector('.modal-content');
+                    modalContent.innerHTML = `<h2 class="text-2xl font-bold text-gray-800 mb-4">Carrinho Vazio</h2><p class="text-gray-600 mb-6">Por favor, adicione itens ao carrinho antes de enviar o pedido.</p><button onclick="document.getElementById('modal-success').style.display='none'" class="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none">Fechar</button>`;
+                    modal.style.display = 'block';
+                    return;
+                }
+
+                const name = document.getElementById('name').value;
+                const phone = document.getElementById('phone').value;
+                const deliveryOption = document.querySelector('input[name="deliveryOption"]:checked').value;
+                let total = 0;
+                const items = Object.values(cart).map(item => {
+                    const itemTotal = item.price * item.quantity;
+                    total += itemTotal;
+                    return {
+                        id: item.id,
+                        name: item.name,
+                        quantity: item.quantity,
+                        price: item.price
+                    };
+                });
+
+                let orderMessage = `*Novo Pedido - Adega*\n\n`;
+                orderMessage += `*Cliente:* ${name}\n`;
+                orderMessage += `*Telefone:* ${phone}\n\n`;
+
+                if (deliveryOption === 'delivery') {
+                    const address = document.getElementById('address').value;
+                    const notes = document.getElementById('notes').value;
+                    orderMessage += `*Opção:* Entrega\n`;
+                    orderMessage += `*Endereço:* ${address}\n`;
+                    if (notes) {
+                        orderMessage += `*Observações:* ${notes}\n`;
+                    }
+                } else {
+                    orderMessage += `*Opção:* Retirada no Local\n`;
+                }
+
+                orderMessage += `\n*Itens do Pedido:*\n`;
+                items.forEach(item => {
+                    orderMessage += `- ${item.name} (${item.quantity} un.) - ${formatPrice(item.price * item.quantity)}\n`;
+                });
+                orderMessage += `\n*Total Geral:* ${formatPrice(total)}\n`;
+                orderMessage += `\n_Pedido gerado automaticamente pelo site._`;
+
+                try {
+                    const newOrderRef = await addDoc(collection(db, `/artifacts/${appId}/users/${userId}/orders`), {
+                        name,
+                        phone,
+                        deliveryOption,
+                        items,
+                        total,
+                        timestamp: serverTimestamp(),
+                    });
+                    console.log("Pedido salvo no Firestore com o ID:", newOrderRef.id);
+                } catch (error) {
+                    console.error("Erro ao salvar o pedido no Firestore:", error);
+                }
+
+                const encodedMessage = encodeURIComponent(orderMessage);
+                const whatsappUrl = `https://api.whatsapp.com/send?phone=${whatsappNumber}&text=${encodedMessage}`;
+                window.open(whatsappUrl, '_blank');
+
+                Object.keys(cart).forEach(key => delete cart[key]);
+                renderCart();
+                orderForm.reset();
+                
+                document.getElementById('modal-success').style.display = 'block';
+            });
+
+            document.querySelectorAll('#category-list a').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    document.querySelector('#category-list .bg-purple-100')?.classList.remove('bg-purple-100', 'text-purple-800');
+                    e.target.classList.add('bg-purple-100', 'text-purple-800');
+                    const category = e.target.dataset.category;
+                    renderProducts(category);
+                });
+            });
+        };
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f3e9;
+            background-image: url('https://m.media-amazon.com/images/I/71gaoQ4CyhL._UF894,1000_QL80_.jpg');
+            background-size: cover;
+            background-attachment: fixed;
+        }
+        .product-card {
+            transition: transform 0.2s;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        .whatsapp-btn {
+            background-color: #25D366;
+            transition: background-color 0.2s;
+        }
+        .whatsapp-btn:hover {
+            background-color: #128C7E;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fff;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 12px;
+            width: 80%;
+            max-width: 500px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col lg:flex-row">
+
+    <div id="modal-success" class="modal">
+        <div class="modal-content text-center">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Pedido Enviado com Sucesso!</h2>
+            <p class="text-gray-600 mb-6">O seu pedido foi enviado para o WhatsApp da adega. Agradecemos a preferência!</p>
+            <button onclick="document.getElementById('modal-success').style.display='none'" class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none">Fechar</button>
+        </div>
+    </div>
+    
+    <aside class="w-full lg:w-64 bg-white p-6 shadow-lg lg:min-h-screen">
+        <div class="mb-8">
+            <img src="https://a.imagem.app/BCw2b2.png" alt="Logotipo Vidal Design Solutions" class="h-20 w-auto mx-auto mb-4">
+            <p class="text-sm text-gray-500 text-center">Seu pedido, a um clique.</p>
+        </div>
+        <nav>
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Categorias</h2>
+            <ul id="category-list" class="space-y-2">
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg bg-purple-100 text-purple-800 font-medium hover:bg-purple-200" data-category="essencias">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M14.25 7.756.91 14.506a2.25 2.25 0 0 0 .114 3.012l6.832 6.832a2.25 2.25 0 0 0 3.012.114l6.75-6.75a2.25 2.25 0 0 0 .114-3.012L17.25 6.75a2.25 2.25 0 0 0-3.012-.114L8.25 11.25M6.75 6.75v.001M17.25 17.25v.001M19.5 21l-2.25-2.25m-6-6-2.25-2.25" />
+                        </svg>
+                        <span>Essências</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="carvao">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Carvão</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="cervejas">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 12c0 2.2.8 4.3 2.3 5.8a8.2 8.2 0 0 0 5.8 2.2 8.2 8.2 0 0 0 5.8-2.2c1.5-1.5 2.3-3.6 2.3-5.8" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Cervejas</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="bebidas_comuns">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21c-2.2 0-4.3-.8-5.8-2.3a8.2 8.2 0 0 1-2.2-5.8c0-2.2.8-4.3 2.3-5.8a8.2 8.2 0 0 1 5.8-2.2c2.2 0 4.3.8 5.8 2.3a8.2 8.2 0 0 1 2.2 5.8c0 2.2-.8 4.3-2.3 5.8a8.2 8.2 0 0 1-5.8 2.2Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Bebidas Comuns</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="bebidas_alcolicas">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21c-2.2 0-4.3-.8-5.8-2.3a8.2 8.2 0 0 1-2.2-5.8c0-2.2.8-4.3 2.3-5.8a8.2 8.2 0 0 1 5.8-2.2c2.2 0 4.3.8 5.8 2.3a8.2 8.2 0 0 1 2.2 5.8c0 2.2-.8 4.3-2.3 5.8a8.2 8.2 0 0 1-5.8 2.2Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Bebidas Alcoólicas</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="drinks">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21c-2.2 0-4.3-.8-5.8-2.3a8.2 8.2 0 0 1-2.2-5.8c0-2.2.8-4.3 2.3-5.8a8.2 8.2 0 0 1 5.8-2.2c2.2 0 4.3.8 5.8 2.3a8.2 8.2 0 0 1 2.2 5.8c0 2.2-.8 4.3-2.3 5.8a8.2 8.2 0 0 1-5.8 2.2Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Drinks</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="headshop">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Headshop</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="bomboniere">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Bomboniere</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="mercadinho">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Mercadinho</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" class="flex items-center space-x-3 p-3 rounded-lg text-gray-600 hover:bg-gray-200" data-category="variados">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21c-2.2 0-4.3-.8-5.8-2.3a8.2 8.2 0 0 1-2.2-5.8c0-2.2.8-4.3 2.3-5.8a8.2 8.2 0 0 1 5.8-2.2c2.2 0 4.3.8 5.8 2.3a8.2 8.2 0 0 1 2.2 5.8c0 2.2-.8 4.3-2.3 5.8a8.2 8.2 0 0 1-5.8 2.2Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />
+                        </svg>
+                        <span>Variados</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main class="flex-1 p-6 lg:p-10">
+        <div class="flex items-center justify-between mb-8">
+            <h2 id="category-title" class="text-2xl lg:text-3xl font-bold text-gray-800">Catálogo de Produtos</h2>
+            <div class="flex space-x-4">
+                <button id="cart-button" class="flex items-center p-3 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 focus:outline-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.102 1.743.856 1.743H19c.954 0 1.583-.923 1.258-1.743L17 13M9 17h6" />
+                    </svg>
+                    <span id="cart-counter" class="ml-2 text-sm font-semibold">0</span>
+                </button>
+                <button id="sales-panel-button" class="flex items-center p-3 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 focus:outline-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-4m0 0V9m0 4h4m-4 0h-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span class="ml-2 text-sm font-semibold hidden sm:inline">Painel de Vendas</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="product-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <p class="text-center col-span-full text-gray-500">Carregando produtos...</p>
+        </div>
+
+        <div id="checkout-section" class="hidden p-6 mt-10 bg-white rounded-lg shadow-xl">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Seu Carrinho</h2>
+            <div id="cart-items" class="space-y-4 mb-6">
+                <!-- Itens do carrinho serão injetados aqui -->
+            </div>
+            <div class="flex justify-between items-center text-lg font-semibold mb-6 border-t pt-4">
+                <span>Total:</span>
+                <span id="cart-total">R$ 0,00</span>
+            </div>
+
+            <form id="order-form" class="space-y-4">
+                <div class="flex flex-col">
+                    <label for="name" class="text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+                    <input type="text" id="name" required class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                </div>
+                <div class="flex flex-col">
+                    <label for="phone" class="text-sm font-medium text-gray-700 mb-1">Telefone (com DDD)</label>
+                    <input type="tel" id="phone" required class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                </div>
+                <div class="flex items-center space-x-4">
+                    <label class="flex items-center">
+                        <input type="radio" name="deliveryOption" value="delivery" checked class="form-radio text-purple-600">
+                        <span class="ml-2 text-gray-700">Entrega</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="deliveryOption" value="pickup" class="form-radio text-purple-600">
+                        <span class="ml-2 text-gray-700">Retirar no Local</span>
+                    </label>
+                </div>
+                
+                <div id="delivery-fields" class="space-y-4">
+                    <div class="flex flex-col">
+                        <label for="address" class="text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                        <input type="text" id="address" class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                    </div>
+                    <div class="flex flex-col">
+                        <label for="notes" class="text-sm font-medium text-gray-700 mb-1">Observações (opcional)</label>
+                        <textarea id="notes" rows="3" class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"></textarea>
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full px-6 py-3 text-lg font-semibold text-white rounded-lg whatsapp-btn focus:outline-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-2" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M.057 16.516c-.347 2.115.534 4.14 2.133 5.372 1.402 1.096 3.12 1.66 4.966 1.66h.005c2.193 0 4.225-.873 5.67-2.457 1.445-1.583 2.152-3.79 1.954-5.996l-.371-3.612c-.067-.655-.098-1.31-.098-1.968-.001-2.903-1.428-5.636-3.84-7.468-2.413-1.832-5.59-2.784-8.825-2.776H6.918C4.542.016 2.378.895.78 2.529-.817 4.162-1.282 6.476-.817 8.814l.87 2.652c.287.893.43 1.79.43 2.686.002.936-.188 1.86-.554 2.738z"/>
+                    </svg>
+                    Enviar Pedido via WhatsApp
+                </button>
+            </form>
+        </div>
+
+        <div id="sales-panel-section" class="hidden p-6 mt-10 bg-white rounded-lg shadow-xl">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">Painel de Vendas</h2>
+            <div id="orders-list" class="space-y-4">
+                <p class="text-center text-gray-500">Carregando pedidos...</p>
+            </div>
+        </div>
+    </main>
+    
+    <footer class="bg-gray-900 text-gray-400 p-6 lg:p-10 text-center mt-10 rounded-t-2xl shadow-inner">
+        <div class="container mx-auto">
+            <p>&copy; 2024 Vidal Design Solutions. Todos os direitos reservados.</p>
+            <p class="text-sm mt-1">Desenvolvido com paixão para a sua adega.</p>
+        </div>
+    </footer>
+</body>
+</html>
